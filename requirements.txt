@@ -3,4 +3,5 @@ requests
 pandas
 matplotlib
 openpyxl
+supabase
 
