@@ -70,6 +70,30 @@ def init_auth() -> bool:
                     except Exception as e:
                         st.error(f"Innlogging feilet: {e}")
 
+            if "show_reset" not in st.session_state:
+                st.session_state["show_reset"] = False
+
+            if st.button("Glemt passord?", use_container_width=True):
+                st.session_state["show_reset"] = not st.session_state["show_reset"]
+
+            if st.session_state["show_reset"]:
+                with st.form("reset_form"):
+                    reset_email = st.text_input("Skriv inn e-postadressen din")
+                    reset_submitted = st.form_submit_button(
+                        "Send tilbakestillingslenke", use_container_width=True
+                    )
+
+                if reset_submitted:
+                    if not reset_email:
+                        st.error("Fyll inn e-postadressen din.")
+                    else:
+                        try:
+                            supabase.auth.reset_password_for_email(reset_email)
+                            st.success("En tilbakestillingslenke er sendt til e-posten din.")
+                            st.session_state["show_reset"] = False
+                        except Exception as e:
+                            st.error(f"Feil: {e}")
+
         else:  # Registrer
             with st.form("register_form"):
                 email = st.text_input("E-post")
