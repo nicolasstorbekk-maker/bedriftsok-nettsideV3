@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import io
 import os
 
@@ -25,6 +26,55 @@ def init_auth() -> bool:
     if "session" not in st.session_state:
         st.session_state["session"] = None
 
+    # ── Detect Supabase recovery token in URL hash and convert to query params ──
+    components.html("""
+    <script>
+        const hash = window.parent.location.hash.substring(1);
+        const params = new URLSearchParams(hash);
+        if (params.get('type') === 'recovery' && !window.parent.location.search.includes('type=recovery')) {
+            const newUrl = window.parent.location.pathname
+                + '?access_token=' + encodeURIComponent(params.get('access_token') || '')
+                + '&refresh_token=' + encodeURIComponent(params.get('refresh_token') || '')
+                + '&type=recovery';
+            window.parent.location.replace(newUrl);
+        }
+    </script>
+    """, height=0)
+
+    # ── Handle password reset flow ─────────────────────────────
+    if st.query_params.get("type") == "recovery":
+        access_token = st.query_params.get("access_token", "")
+        refresh_token = st.query_params.get("refresh_token", "")
+
+        _, col, _ = st.columns([1, 2, 1])
+        with col:
+            if os.path.exists("static/uldre.png"):
+                st.image("static/uldre.png", width=140)
+            st.title("Sett nytt passord")
+
+            with st.form("new_password_form"):
+                new_password = st.text_input("Nytt passord", type="password")
+                confirm_password = st.text_input("Bekreft passord", type="password")
+                submitted = st.form_submit_button(
+                    "Oppdater passord", use_container_width=True, type="primary"
+                )
+
+            if submitted:
+                if not new_password or not confirm_password:
+                    st.error("Fyll inn begge feltene.")
+                elif new_password != confirm_password:
+                    st.error("Passordene stemmer ikke overens.")
+                else:
+                    try:
+                        supabase.auth.set_session(access_token, refresh_token)
+                        supabase.auth.update_user({"password": new_password})
+                        st.success("Passordet er oppdatert! Du kan nå logge inn.")
+                        st.query_params.clear()
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Feil: {e}")
+        return False
+
     # Validate existing session
     if st.session_state["session"] is not None:
         try:
@@ -42,85 +92,49 @@ def init_auth() -> bool:
 
         st.title("Bedriftssøk")
 
-        mode = st.radio(
-            "Modus",
-            ["Logg inn", "Registrer"],
-            horizontal=True,
-            label_visibility="collapsed",
-        )
+        with st.form("login_form"):
+            email = st.text_input("E-post")
+            password = st.text_input("Passord", type="password")
+            submitted = st.form_submit_button(
+                "Logg inn", use_container_width=True, type="primary"
+            )
 
-        if mode == "Logg inn":
-            with st.form("login_form"):
-                email = st.text_input("E-post")
-                password = st.text_input("Passord", type="password")
-                submitted = st.form_submit_button(
-                    "Logg inn", use_container_width=True, type="primary"
-                )
-
-            if submitted:
-                if not email or not password:
-                    st.error("Fyll inn e-post og passord.")
-                else:
-                    try:
-                        resp = supabase.auth.sign_in_with_password(
-                            {"email": email, "password": password}
-                        )
-                        st.session_state["session"] = resp.session
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Innlogging feilet: {e}")
-
-            if "show_reset" not in st.session_state:
-                st.session_state["show_reset"] = False
-
-            if st.button("Glemt passord?", use_container_width=True):
-                st.session_state["show_reset"] = not st.session_state["show_reset"]
-
-            if st.session_state["show_reset"]:
-                with st.form("reset_form"):
-                    reset_email = st.text_input("Skriv inn e-postadressen din")
-                    reset_submitted = st.form_submit_button(
-                        "Send tilbakestillingslenke", use_container_width=True
+        if submitted:
+            if not email or not password:
+                st.error("Fyll inn e-post og passord.")
+            else:
+                try:
+                    resp = supabase.auth.sign_in_with_password(
+                        {"email": email, "password": password}
                     )
+                    st.session_state["session"] = resp.session
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Innlogging feilet: {e}")
 
-                if reset_submitted:
-                    if not reset_email:
-                        st.error("Fyll inn e-postadressen din.")
-                    else:
-                        try:
-                            supabase.auth.reset_password_for_email(reset_email)
-                            st.success("En tilbakestillingslenke er sendt til e-posten din.")
-                            st.session_state["show_reset"] = False
-                        except Exception as e:
-                            st.error(f"Feil: {e}")
+        if "show_reset" not in st.session_state:
+            st.session_state["show_reset"] = False
 
-        else:  # Registrer
-            with st.form("register_form"):
-                email = st.text_input("E-post")
-                password = st.text_input("Passord", type="password")
-                password2 = st.text_input("Bekreft passord", type="password")
-                submitted = st.form_submit_button(
-                    "Registrer", use_container_width=True, type="primary"
+        if st.button("Glemt passord?", use_container_width=True):
+            st.session_state["show_reset"] = not st.session_state["show_reset"]
+
+        if st.session_state["show_reset"]:
+            with st.form("reset_form"):
+                reset_email = st.text_input("Skriv inn e-postadressen din")
+                reset_submitted = st.form_submit_button(
+                    "Send tilbakestillingslenke", use_container_width=True
                 )
 
-            if submitted:
-                if not email or not password or not password2:
-                    st.error("Fyll inn alle feltene.")
-                elif password != password2:
-                    st.error("Passordene stemmer ikke overens.")
+            if reset_submitted:
+                if not reset_email:
+                    st.error("Fyll inn e-postadressen din.")
                 else:
                     try:
-                        resp = supabase.auth.sign_up(
-                            {"email": email, "password": password}
-                        )
-                        if resp.user:
-                            st.success(
-                                "Konto opprettet! Sjekk e-posten din for å bekrefte kontoen."
-                            )
-                        else:
-                            st.error("Registrering feilet. Prøv igjen.")
+                        supabase.auth.reset_password_for_email(reset_email)
+                        st.success("En tilbakestillingslenke er sendt til e-posten din.")
+                        st.session_state["show_reset"] = False
                     except Exception as e:
-                        st.error(f"Registrering feilet: {e}")
+                        st.error(f"Feil: {e}")
 
     return False
 
