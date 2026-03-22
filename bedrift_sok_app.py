@@ -29,18 +29,6 @@ def init_auth() -> bool:
     token_hash = st.query_params.get("token_hash", "")
     if token_hash and st.query_params.get("type") == "recovery":
 
-        # Verify the token once and cache the session
-        if "recovery_session" not in st.session_state:
-            try:
-                response = supabase.auth.verify_otp(
-                    {"token_hash": token_hash, "type": "recovery"}
-                )
-                st.session_state["recovery_session"] = response.session
-            except Exception as e:
-                st.error(f"Ugyldig eller utløpt tilbakestillingslenke: {e}")
-                st.query_params.clear()
-                return False
-
         _, col, _ = st.columns([1, 2, 1])
         with col:
             if os.path.exists("static/uldre.png"):
@@ -61,13 +49,11 @@ def init_auth() -> bool:
                     st.error("Passordene stemmer ikke overens.")
                 else:
                     try:
-                        session = st.session_state["recovery_session"]
-                        supabase.auth.set_session(
-                            session.access_token, session.refresh_token
+                        supabase.auth.verify_otp(
+                            {"token_hash": token_hash, "type": "recovery"}
                         )
                         supabase.auth.update_user({"password": new_password})
                         st.success("Passordet er oppdatert! Du kan nå logge inn.")
-                        st.session_state.pop("recovery_session", None)
                         st.query_params.clear()
                         st.rerun()
                     except Exception as e:
