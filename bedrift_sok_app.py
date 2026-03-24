@@ -1,6 +1,6 @@
 import streamlit as st
 import io
-import os
+from pathlib import Path
 
 from supabase import create_client, Client
 from api import hent_kommunenummer, sok_alle_sider
@@ -31,15 +31,16 @@ def init_auth() -> bool:
 
         _, col, _ = st.columns([1, 2, 1])
         with col:
-            if os.path.exists("static/uldre.png"):
-                st.image("static/uldre.png", width=140)
+            logo = Path(__file__).parent / "static" / "uldre.png"
+            if logo.exists():
+                st.image(str(logo), width=140)
             st.title("Sett nytt passord")
 
             with st.form("new_password_form"):
                 new_password = st.text_input("Nytt passord", type="password")
                 confirm_password = st.text_input("Bekreft passord", type="password")
                 submitted = st.form_submit_button(
-                    "Oppdater passord", use_container_width=True, type="primary"
+                    "Oppdater passord", width='stretch', type="primary"
                 )
 
             if submitted:
@@ -72,8 +73,9 @@ def init_auth() -> bool:
     # ── Login / Register UI ───────────────────────────────────
     _, col, _ = st.columns([1, 2, 1])
     with col:
-        if os.path.exists("static/uldre.png"):
-            st.image("static/uldre.png", width=140)
+        logo = Path(__file__).parent / "static" / "uldre.png"
+        if logo.exists():
+            st.image(str(logo), width=140)
 
         st.title("Bedriftssøk")
 
@@ -81,7 +83,7 @@ def init_auth() -> bool:
             email = st.text_input("E-post")
             password = st.text_input("Passord", type="password")
             submitted = st.form_submit_button(
-                "Logg inn", use_container_width=True, type="primary"
+                "Logg inn", width='stretch', type="primary"
             )
 
         if submitted:
@@ -90,24 +92,25 @@ def init_auth() -> bool:
             else:
                 try:
                     resp = supabase.auth.sign_in_with_password(
-                        {"email": email, "password": password}
+                        {"email": email.strip(), "password": password.strip()}
                     )
                     st.session_state["session"] = resp.session
                     st.rerun()
                 except Exception as e:
-                    st.error(f"Innlogging feilet: {e}")
+                    msg = getattr(e, "message", str(e))
+                    st.error(f"Innlogging feilet: {msg}")
 
         if "show_reset" not in st.session_state:
             st.session_state["show_reset"] = False
 
-        if st.button("Glemt passord?", use_container_width=True):
+        if st.button("Glemt passord?", width='stretch'):
             st.session_state["show_reset"] = not st.session_state["show_reset"]
 
         if st.session_state["show_reset"]:
             with st.form("reset_form"):
                 reset_email = st.text_input("Skriv inn e-postadressen din")
                 reset_submitted = st.form_submit_button(
-                    "Send tilbakestillingslenke", use_container_width=True
+                    "Send tilbakestillingslenke", width='stretch'
                 )
 
             if reset_submitted:
@@ -129,7 +132,7 @@ def main():
 
     # ── Session state ──────────────────────────────────────────
     for key, default in {
-        "valgt_kode": "56.101",
+        "valgt_kode": "",
         "enheter": None,
         "totalt": 0,
         "sok_naeringskode": "",
@@ -163,7 +166,7 @@ def main():
         )
         st.markdown("Appen er utviklet av **Uldre**")
         st.markdown("---")
-        if st.button("Logg ut", use_container_width=True):
+        if st.button("Logg ut", width='stretch'):
             supabase.auth.sign_out()
             st.session_state["session"] = None
             st.rerun()
@@ -174,8 +177,9 @@ def main():
         st.title("Bedriftssøk")
         st.markdown("Søk etter bedrifter i Enhetsregisteret basert på næringskode og kommune.")
     with col_right:
-        if os.path.exists("static/uldre.png"):
-            st.image("static/uldre.png", use_container_width=True)
+        logo = Path(__file__).parent / "static" / "uldre.png"
+        if logo.exists():
+            st.image(str(logo), width='stretch')
 
     # ── Inputfelter ───────────────────────────────────────────
     col1, col2 = st.columns(2)
@@ -186,7 +190,7 @@ def main():
             help="Velg fra sidebaren eller skriv inn manuelt. F.eks. 56.101 = Restaurant",
         )
     with col2:
-        kommune = st.text_input("Kommune", value="Trondheim")
+        kommune = st.text_input("Kommune", value="")
 
     sok_knapp = st.button("Søk", type="primary")
 
@@ -204,10 +208,13 @@ def main():
                 with st.spinner("Henter bedrifter..."):
                     enheter, totalt = sok_alle_sider(naeringskode, kommunenr)
 
-                st.session_state["enheter"]         = enheter
-                st.session_state["totalt"]           = totalt
-                st.session_state["sok_naeringskode"] = naeringskode
-                st.session_state["sok_kommune"]      = kommune
+                if totalt == 0:
+                    st.warning(f"Fant ingen bedrifter med næringskode {naeringskode} i {kommune}.")
+                else:
+                    st.session_state["enheter"]         = enheter
+                    st.session_state["totalt"]           = totalt
+                    st.session_state["sok_naeringskode"] = naeringskode
+                    st.session_state["sok_kommune"]      = kommune
 
     # ── Vis resultater ────────────────────────────────────────
     if st.session_state["enheter"]:
@@ -224,9 +231,8 @@ def main():
         kun_med_kontakt = st.checkbox("Kun vis bedrifter med telefon eller e-post")
         if kun_med_kontakt:
             df = df[(df["Telefon"] != "–") | (df["E-post"] != "–")]
-
-        st.info(f"Viser {len(df)} bedrifter")
-        st.dataframe(df, use_container_width=True)
+            st.info(f"Viser {len(df)} bedrifter")
+        st.dataframe(df, width='stretch')
 
         excel_buffer = io.BytesIO()
         df.to_excel(excel_buffer, index=False, engine="openpyxl")
@@ -237,7 +243,7 @@ def main():
             data=excel_buffer,
             file_name=f"bedrifter_{sok_kode.replace('.','_')}_{sok_kommunen}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=False,
+            width='content',
         )
 
 
